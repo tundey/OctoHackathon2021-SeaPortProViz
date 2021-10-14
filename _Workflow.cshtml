@@ -1,0 +1,379 @@
+﻿@model Aquilent.Navy.WebApp.Models.WorkflowModel
+
+@* Based off State Chart sample *@
+
+<div id="myDiagramDiv" style="width: auto; height: 500px; border: 1x solid; background-color: #8080801c !important"></div>
+
+<br />
+<div class="row">
+    <div class="col-xs-12">
+        <button type="button" class="btn btn-primary btn-sm" data-dismiss="modal" onclick="$('#workflowWindow').data('kendoWindow').close()">Close</button>@Html.Raw("&nbsp;")
+        @*<button id="SaveButton" onclick="save()">Save</button>
+            <button onclick="load()">Load</button>
+
+            <textarea id="mySavedModel" style="width:100%;height:300px" ></textarea>*@
+
+    </div>
+</div>
+
+<style>
+    .workflowDialog {
+        width: 1200px;
+        height: 700px;
+        /*max-height: 100% !important;*/
+    }
+</style>
+
+<script type="text/javascript">
+    $(document).ready(function () {
+        $("div.modal-dialog").addClass("workflowDialog");
+    });
+</script>
+
+
+
+<script type="text/javascript">
+    init();
+    highlightPackageStatus();
+
+    function scrollDiagram() {
+        console.log('scrollDiagram');
+        // scroll diagram
+        var results = myDiagram.findNodesByExample({ text: 'Executed Task Order' });
+        if (results.count > 0) {
+            myDiagram.centerRect(results.first().actualBounds);
+        }
+    }
+
+    function init() {
+        //debugger;
+        var $g = go.GraphObject.make;  // for conciseness in defining templates
+
+        // some constants that will be reused within templates
+        var mt8 = new go.Margin(8, 0, 0, 0);
+        var mr8 = new go.Margin(0, 8, 0, 0);
+        var ml8 = new go.Margin(0, 0, 0, 8);
+
+        var roundedRectangleParams = {
+            parameter1: 2,  // set the rounded corner
+            spot1: go.Spot.TopLeft, spot2: go.Spot.BottomRight  // make content go all the way to inside edges of rounded corners
+        };
+
+        myDiagram =
+            $g(go.Diagram, "myDiagramDiv",  // must name or refer to the DIV HTML element
+                {
+                    "animationManager.initialAnimationStyle": go.AnimationManager.None,
+                    "InitialAnimationStarting": function (e) {
+                        var animation = e.subject.defaultAnimation;
+                        animation.easing = go.Animation.EaseOutExpo;
+                        animation.duration = 900;
+                        animation.add(e.diagram, 'scale', 0.1, 1);
+                        animation.add(e.diagram, 'opacity', 0, 1);
+                    },
+                   positionComputation: function (diagram, pt) {
+                        return new go.Point(Math.floor(pt.x), Math.floor(pt.y));
+                    }
+                });
+
+        // This function provides a common style for most of the DraftSdLine212
+        // Some of these values may be overridden in a particular TextBlock.
+        function textStyle(field) {
+            return [
+                {
+                    font: "12px Roboto, sans-serif", stroke: "rgba(0, 0, 0, .60)",
+                    visible: false,  // only show textblocks when there is corresponding data for them,
+                },
+                new go.Binding("visible", field, function (val) { return val !== undefined; })
+            ];
+        }
+
+        // define Converters to be used for Bindings
+        function theNationFlagConverter(nation) {
+            //return "https://www.nwoods.com/images/emojiflags/" + 'Nigeria' + ".png";
+            //return '~/content/images/icon-help.gif';
+            return 'http://localhost/NxG/content/images/icon_exclamation.png';
+        }
+
+        // define the Node template
+        myDiagram.nodeTemplate =
+            $g(go.Node, "Auto",
+                {
+                    locationSpot: go.Spot.Top,
+                    isShadowed: true, shadowBlur: 1,
+                    shadowOffset: new go.Point(0, 1),
+                    shadowColor: "rgba(0, 0, 0, .14)",
+                    mouseEnter: mouseEnter,
+                    mouseLeave: mouseLeave,
+                    selectionAdornmentTemplate:  // selection adornment to match shape of nodes
+                        $g(go.Adornment, "Auto",
+                            $g(go.Shape, "RoundedRectangle", roundedRectangleParams,
+                                { fill: null, stroke: "#7986cb", strokeWidth: 3 }
+                            ),
+                            $g(go.Placeholder)
+                        )
+                },
+                new go.Binding("location", "loc", go.Point.parse).makeTwoWay(go.Point.stringify),
+                // define the node's outer shape, which will surround the TextBlock
+                $g(go.Shape, "RoundedRectangle", roundedRectangleParams,
+                    {
+                        name: "SHAPE", fill: "#ffffff", strokeWidth: 0,
+                        stroke: null,
+                        portId: "",  // this Shape is the Node's port, not the whole Node
+                        fromLinkable: true, fromLinkableSelfNode: true, fromLinkableDuplicates: true,
+                        toLinkable: true, toLinkableSelfNode: true, toLinkableDuplicates: true,
+                        ////cursor: "pointer"
+                    },
+                    new go.Binding("fill", "isHighlighted", function (h) { return h ? "gold" : "#ffffff"; }).ofObject()
+                ),
+                $g(go.Panel, "Vertical",
+                    $g(go.Panel, "Horizontal",
+                        { margin: 8, width: 250, },
+                        $g(go.Picture,  // flag image, only visible if a nation is specified
+                            { margin: mr8, visible: false},
+                            new go.Binding("source", "error_state", theNationFlagConverter),
+                            new go.Binding("visible", "error_state", function (nat) { return nat == 'yes'; })
+                        ),
+                        $g(go.Panel, "Table",
+                            $g(go.TextBlock,
+                                {
+                                    name: 'TEXT',
+                                    row: 0, alignment: go.Spot.Left,
+                                    font: "bold small-caps 11pt helvetica, bold arial, sans-serif", margin: 7, stroke: "rgba(0, 0, 0, .87)",
+                                },
+                                new go.Binding("text")
+                            ),
+                            $g("PanelExpanderButton", "INFO",
+                                { row: 0, column: 1, rowSpan: 2, margin: ml8, }
+                            )
+                        )
+                    ),
+                $g(go.Shape, "LineH",
+                    {
+                        stroke: "rgba(0, 0, 0, .60)", strokeWidth: 1,
+                        height: 1, stretch: go.GraphObject.Horizontal
+                    },
+                    new go.Binding("visible").ofObject("INFO")  // only visible when info is expanded
+                    ),
+            $g(go.Panel, "Vertical",
+                {
+                    name: "INFO",  // identify to the PanelExpanderButton
+                    stretch: go.GraphObject.Horizontal,  // take up whole available width
+                    margin: 8,
+                    defaultAlignment: go.Spot.Left,  // thus no need to specify alignment on each element
+                    visible: true
+                },
+                $g(go.TextBlock, textStyle("line1"),
+                    //{ wrap: 'None' },
+                    new go.Binding("text", "line1", function (head) { return head; })
+                ),
+                $g(go.TextBlock, textStyle("line2"),
+                    new go.Binding("text", "line2", function (head) { return head; })
+                ),
+                $g(go.TextBlock, textStyle("line3"),
+                    new go.Binding("text", "line3", function (head) { return head; })
+                ),
+                $g(go.TextBlock, textStyle("line4"),
+                    new go.Binding("text", "line4", function (head) { return head; })
+                ),
+                $g(go.TextBlock, textStyle("line5"),
+                    new go.Binding("text", "line5", function (head) { return head; })
+                )
+            )
+
+
+                )
+            );
+
+
+        // unlike the normal selection Adornment, this one includes a Button
+        myDiagram.nodeTemplate.selectionAdornmentTemplate =
+            $g(go.Adornment, "Spot",
+                $g(go.Panel, "Auto",
+                    $g(go.Shape, "RoundedRectangle", roundedRectangleParams,
+                        { fill: null, stroke: "#7986cb", strokeWidth: 3 }),
+                    $g(go.Placeholder)  // a Placeholder sizes itself to the selected Node
+                )
+            ); // end Adornment
+
+        myDiagram.nodeTemplateMap.add("Start",
+            $g(go.Node, "Spot", { desiredSize: new go.Size(75, 75) },
+                new go.Binding("location", "loc", go.Point.parse).makeTwoWay(go.Point.stringify),
+                $g(go.Shape, "Circle",
+                    {
+                        fill: "#52ce60", /* green */
+                        stroke: null,
+                        portId: "",
+                        fromLinkable: true, fromLinkableSelfNode: true, fromLinkableDuplicates: true,
+                        toLinkable: true, toLinkableSelfNode: true, toLinkableDuplicates: true,
+                        cursor: "pointer"
+                    }),
+                $g(go.TextBlock, "Start",
+                    {
+                        font: "bold 16pt helvetica, bold arial, sans-serif",
+                        stroke: "whitesmoke"
+                    })
+            )
+        );
+
+        myDiagram.nodeTemplateMap.add("End",
+            $g(go.Node, "Spot", { desiredSize: new go.Size(100, 100) },
+                new go.Binding("location", "loc", go.Point.parse).makeTwoWay(go.Point.stringify),
+                $g(go.Shape, "Circle",
+                    {
+                        fill: "maroon",
+                        stroke: null,
+                        portId: "",
+                        fromLinkable: true, fromLinkableSelfNode: true, fromLinkableDuplicates: true,
+                        toLinkable: true, toLinkableSelfNode: true, toLinkableDuplicates: true,
+                        cursor: "pointer"
+                    },
+                    new go.Binding("fill", "isHighlighted", function (h) { return h ? "gold" : "maroon"; }).ofObject()
+                ),
+                $g(go.Shape, "Circle", { fill: null, desiredSize: new go.Size(90, 90), strokeWidth: 2, stroke: "whitesmoke" }),
+                $g(go.TextBlock, "Closed",
+                    {
+                        font: "bold 16pt helvetica, bold arial, sans-serif",
+                        stroke: "whitesmoke",
+                        textAlign: 'center'
+                    })
+            )
+        );
+
+        // replace the default Link template in the linkTemplateMap
+        myDiagram.linkTemplate =
+            $g(go.Link,  // the whole link panel
+                {
+                    curve: go.Link.Bezier,
+                    adjusting: go.Link.Stretch,
+                    reshapable: true, relinkableFrom: true, relinkableTo: true,
+                    toShortLength: 3
+                },
+                new go.Binding("points").makeTwoWay(),
+                new go.Binding("curviness"),
+                $g(go.Shape,  // the link shape
+                    { strokeWidth: 1.5 },
+                    new go.Binding('stroke', 'progress', function (progress) {
+                        return progress ? "#52ce60" /* green */ : 'black';
+                    }),
+                    new go.Binding('strokeWidth', 'progress', function (progress) {
+                        return progress ? 2.5 : 1.5;
+                    })
+                ),
+                $g(go.Shape,  // the arrowhead
+                    { toArrow: "standard", stroke: null },
+                    new go.Binding('fill', 'progress', function (progress) {
+                        return progress ? "#52ce60" /* green */ : 'black';
+                    })),
+                $g(go.Panel, "Auto",
+                    $g(go.Shape,  // the label background, which becomes transparent around the edges
+                        {
+                            fill: $g(go.Brush, "Radial",
+                                { 0: "rgb(245, 245, 245)", 0.7: "rgb(245, 245, 245)", 1: "rgba(245, 245, 245, 0)" }),
+                            stroke: null
+                        }),
+                    $g(go.TextBlock, "transition",  // the label text
+                        {
+                            textAlign: "center",
+                            font: "9pt helvetica, arial, sans-serif",
+                            margin: 4,
+                            editable: false  // enable in-place editing
+                        },
+                        // editing the text automatically updates the model data
+                        new go.Binding("text").makeTwoWay())
+                )
+            );
+
+
+        var model = new go.GraphLinksModel();
+
+        model.nodeDataArray = [
+            { "id": "start", "category": "Start", "text": "Start", "loc": "88 -86", "key": -1 },
+            {
+                "id": "pr", "text": "Purchase Request", "loc": "157.97959183673476 63.798185941043016", "line1": "@Model.PurchaseRequestLine1", "error_state": "@Model.PrError", "key": -2 },
+            { "id": "sd", "text": "Draft Solicitation", "loc": "400.34693877551024 -126", "line1": "@Model.DraftSdLine1", "line2": "@Model.DraftSdLine2", "error_state": "@Model.DraftSdError", "key": -3 },
+            {
+                "id": "op", "text": "Released Solicitation", "loc": "813.5 -83", "error_state": "yes",
+                "line1": "@Model.ReleasedSdLine1", "line2": "@Model.ReleasedSdLine2", "line3": "@Model.ReleasedSdLine3", "error_state": "@Model.ReleasedSdError", "key": -4
+            },
+            {
+                "id": "to", "text": "Draft Task Order", "loc": "894.0453514739229 89.18594104308391",
+                "line1": "@Model.DraftToLine1", "line2": "@Model.DraftToLine2", 'line3': "@Model.DraftToLine3", "line4": "@Model.DraftToLine4", "line5": "@Model.DraftToLine5", "error_state": "@Model.DraftToError", "key": -5
+            },
+            {
+                "id": "eto", "text": "Executed Task Order", "loc": "525.4773242630386 217.65079365079362", "error_state": "no",
+                "line1": "@Model.ExecutedToLine1", "line2": "@Model.ExecutedToLine2", "line3": "@Model.ExecutedToLine3", "line4": "@Model.ExecutedToLine4", "error_state": "@Model.ExecutedToError", "key": -6
+            },
+            { "id": "end", "loc": "136 199", "category": "End", "text": "Closed", "key": -7 }
+        ];
+
+        model.linkDataArray = [
+            { "id": -1, "to": -2, "points": [140.58830440823027, -14.169356689910714, 151.5399399131891, 10.25549189285087, 156.6635518621039, 33.85093452429669, 157.21697039195314, 63.798185941043016], "text": "Create PR" },
+            { "id": -2, "to": -3, "points": [201.45619470810533, 63.798185941043016, 248.24860557342834, 21.625450419670717, 278.20550931607306, -0.17671168602870901, 316.6392053520929, -23.139785766601577], "text": "Create SD" },
+            { "id": -3, "to": -4, "points": [533.3469387755102, -67.84112143688708, 589.189479368718, -65.2097184774462, 638.394689284555, -59.76409700829904, 680.5, -52.86912759824788], "text": "Release SD" },
+            { "id": -4, "to": -5, "points": [852.0981165395137, 19.86021423339845, 866.6546429934759, 38.42863666193324, 876.4899108783286, 61.5202674725953, 881.3065287562963, 89.18594104308391], "text": "Create Award" },
+            { "id": -6, "to": -7, "points": [392.47732426303855, 277.6389610020605, 338.6443325423827, 277.89323014032914, 286.5953428434305, 273.40242412508906, 234.60680670476657, 260.72085073556775], "text": "Close" },
+            { "id": -5, "to": -6, "points": [766.4735192153415, 218.03599902648236, 733.9562309806657, 234.21664795643792, 697.9434557800181, 245.63466928781068, 658.4773242630386, 252.61380248760454], "text": "Execute TO" }
+        ];
+
+        model.linkFromKeyProperty = 'id';
+        myDiagram.model = model;
+        //https://gojs.net/latest/intro/permissions.html
+        myDiagram.isModelReadOnly = true;
+    }
+
+    function mouseEnter(e, obj) {
+        var shape = obj.findObject("SHAPE");
+        shape.fill = "#6DAB80";
+        shape.stroke = "#A6E6A1";
+        var text = obj.findObject("TEXT");
+        text.stroke = "white";
+    };
+
+    function mouseLeave(e, obj) {
+        var shape = obj.findObject("SHAPE");
+        // Return the Shape's fill and stroke to the defaults
+        if (obj.isHighlighted) {
+            shape.fill = 'gold';
+        } else {
+            shape.fill = '#ffffff';
+        }
+        shape.stroke = null;
+        // Return the TextBlock's stroke to its default
+        var text = obj.findObject("TEXT");
+        text.stroke = "black";
+    };
+
+    function highlightPackageStatus() {
+        //debugger;
+        var statusText = '@(Model.PackageStatus)';
+        if (statusText.startsWith('Purchase Request')) {
+            statusText = 'Purchase Request';
+        } else if (statusText.startsWith('Solicitation') && statusText.includes('Draft')) {
+            statusText = 'Draft Solicitation';
+        } else if (statusText.startsWith('Solicitation') && !statusText.includes('Draft')) {
+            statusText = 'Released Solicitation';
+        } else if (statusText.startsWith('Task Order') && statusText.includes('Draft')) {
+            statusText = 'Draft Task Order';
+        } else if ((statusText.startsWith('Task Order') && !statusText.includes('Closed')) || statusText.includes('Completed')) {
+            statusText = 'Executed Task Order';
+        } else {
+            statusText = 'Closed'
+        }
+
+        var results = myDiagram.findNodesByExample({ text: statusText });
+        if (results.count > 0) {
+            myDiagram.highlightCollection(results);
+            myDiagram.centerRect(results.first().actualBounds);
+        }
+    }
+
+    // Show the diagram's model in JSON format
+    function save() {
+        document.getElementById("mySavedModel").value = myDiagram.model.toJson();
+        myDiagram.isModified = false;
+    }
+    function load() {
+        myDiagram.model = go.Model.fromJson(document.getElementById("mySavedModel").value);
+    }
+</script>
+
